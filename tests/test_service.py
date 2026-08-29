@@ -19,7 +19,18 @@ def build(**kw):
 
 def test_service_name():
     s = build()
-    assert s.svc.service_name == "com.victronenergy.evcharger.40"
+    # D-Bus bus names forbid digits after the last dot; instance lives in
+    # /DeviceInstance, suffix is textual.
+    assert s.svc.service_name == "com.victronenergy.evcharger.ha"
+
+
+def test_service_name_custom_suffix():
+    s = EvChargerService(
+        instance=22,
+        version="0.1.0",
+        bus_suffix="ttyO1",
+    )
+    assert s.svc.service_name == "com.victronenergy.evcharger.ttyO1"
 
 
 def test_identity_paths_present():

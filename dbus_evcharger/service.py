@@ -128,12 +128,15 @@ class EvChargerService:
         custom_name: str = "EV Charger",
         product_name: str = "EV Charger",
         connection: str = "Local",
+        bus_suffix: str = "ha",
         on_mode=None,
         on_startstop=None,
         on_setcurrent=None,
     ) -> None:
         self.instance = instance
-        bus_name = f"com.victronenergy.evcharger.{instance}"
+        # D-Bus bus names forbid digits after the last dot; instance lives in
+        # /DeviceInstance only. Matches Victron convention (ttyO1, ha, etc.).
+        bus_name = f"com.victronenergy.evcharger.{bus_suffix}"
         self.svc = _make_service(bus_name)
         _identity_paths(
             self.svc,
