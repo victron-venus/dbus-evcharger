@@ -130,6 +130,19 @@ Copy `local_config.example.py` to `local_config.py` on the device and fill in:
 
 ## Install
 
+
+Via SetupHelper PackageManager (GUI v1): drop the repo in `/data/dbus-evcharger`
+(must contain `version` + `setup`). Then Settings → PackageManager → install,
+or:
+
+```sh
+/data/dbus-evcharger/setup install
+/data/dbus-evcharger/setup uninstall
+```
+
+`gitHubInfo` is `victron-venus:latest`. Device-local `local_config.py` is not overwritten.
+
+
 ```sh
 ./deploy.sh          # streams repo to Cerbo, runs update.sh there
 ./restart.sh         # restart the service only

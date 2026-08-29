@@ -22,7 +22,7 @@ INSTALL_DIR="${1:-/data/dbus-evcharger}"
 LOCAL_ONLY="local_config.py"
 
 # Runtime items shipped at the repo root and installed at INSTALL_DIR root.
-RUNTIME_ITEMS="dbus_evcharger version"
+RUNTIME_ITEMS="dbus_evcharger version setup gitHubInfo local_config.example.py"
 
 # Flat-file leftovers that must never survive an update (we run `python3 -m
 # dbus_evcharger`; a stale root main.py would shadow the package).

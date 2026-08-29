@@ -10,6 +10,7 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
+    "paho-mqtt>=2.0",
     "requests>=2.31",
 ]
 
@@ -43,4 +44,4 @@ disable = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=dbus_evcharger --cov-report=term-missing --cov-fail-under=60"
+addopts = "--cov=dbus_evcharger --cov-report=term-missing --cov-fail-under=80"

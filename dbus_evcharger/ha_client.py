@@ -14,15 +14,16 @@ import requests
 logger = logging.getLogger(__name__)
 
 # Jinja template sent to /api/template. Tokens are replaced literally
-# (str.format would fight the Jinja braces).
+# (str.format would fight the Jinja braces). Optional entities omitted
+# when empty -> emit null via conditional Jinja.
 TEMPLATE_BODY = """{{ {
   'status': states('@STATUS@') | string,
-  'power': states('@POWER@') | float(0),
-  'current': states('@CURRENT@') | float(0),
-  'energy_forward': states('@ENERGY@') | float(0),
-  'session_time': states('@SESSION_TIME@') | int(0),
-  'startstop': states('@STARTSTOP@') | int(0),
-  'setcurrent': states('@SETCURRENT@') | float(0)
+  'power': {% if '@POWER@' != '' %}states('@POWER@') | float(0){% else %}none{% endif %},
+  'current': {% if '@CURRENT@' != '' %}states('@CURRENT@') | float(0){% else %}none{% endif %},
+  'energy_forward': {% if '@ENERGY@' != '' %}states('@ENERGY@') | float(0){% else %}none{% endif %},
+  'session_time': {% if '@SESSION_TIME@' != '' %}states('@SESSION_TIME@') | int(0){% else %}none{% endif %},
+  'startstop': {% if '@STARTSTOP@' != '' %}states('@STARTSTOP@') | int(0){% else %}none{% endif %},
+  'setcurrent': {% if '@SETCURRENT@' != '' %}states('@SETCURRENT@') | float(0){% else %}none{% endif %}
 } | to_json }}"""
 
 
@@ -32,6 +33,16 @@ class HomeAssistantError(Exception):
 
 class HomeAssistantAPIError(HomeAssistantError):
     pass
+
+
+def _str_or_none(s: Any) -> str | None:
+    """Coerce a value to a trimmed string, returning None for empty/none/unavailable."""
+    if s is None:
+        return None
+    s = str(s).strip()
+    if s == "" or s.lower() in ("none", "unknown", "unavailable"):
+        return None
+    return s
 
 
 class CircuitBreaker:
@@ -76,12 +87,12 @@ def build_template(
 ) -> str:
     return (
         TEMPLATE_BODY.replace("@STATUS@", status_entity)
-        .replace("@POWER@", power_entity)
-        .replace("@CURRENT@", current_entity)
-        .replace("@ENERGY@", energy_entity)
-        .replace("@SESSION_TIME@", session_time_entity or "__no_session_time__")
-        .replace("@STARTSTOP@", startstop_entity or "__no_startstop__")
-        .replace("@SETCURRENT@", setcurrent_entity or "__no_setcurrent__")
+        .replace("@POWER@", power_entity or "")
+        .replace("@CURRENT@", current_entity or "")
+        .replace("@ENERGY@", energy_entity or "")
+        .replace("@SESSION_TIME@", session_time_entity or "")
+        .replace("@STARTSTOP@", startstop_entity or "")
+        .replace("@SETCURRENT@", setcurrent_entity or "")
     )
 
 
@@ -128,7 +139,7 @@ class HaClient:
             startstop_entity,
             setcurrent_entity,
         )
-        self._configured = all((base_url, token, status_entity))
+        self._configured = bool(base_url and token)
         self._session = requests.Session()
         if token:
             self._session.headers.update(
@@ -152,7 +163,7 @@ class HaClient:
         result = dict(self.last_known)
         result["ok"] = False
         if not self._configured:
-            self._log_error_throttled("HA client not configured (local_config.py missing?)")
+            self._log_error_throttled("HA client not configured (HA_URL or HA_TOKEN empty)")
             return result
         if self.breaker.is_open:
             return result
@@ -165,35 +176,37 @@ class HaClient:
             if resp.status_code != 200:
                 raise HomeAssistantAPIError(f"/api/template HTTP {resp.status_code}")
             data = json.loads(resp.text)
-            status_raw = str(data.get("status", "")).strip()
-            power_raw = str(data.get("power", "0")).strip()
-            current_raw = str(data.get("current", "0")).strip()
-            energy_raw = str(data.get("energy_forward", "0")).strip()
-            session_time_raw = str(data.get("session_time", "0")).strip()
-            startstop_raw = str(data.get("startstop", "0")).strip()
-            setcurrent_raw = str(data.get("setcurrent", "0")).strip()
 
-            # Coerce numerics with safe fallbacks
-            def _f(s: str) -> float | None:
+            def _f(s: Any) -> float | None:
+                if s is None:
+                    return None
+                s = str(s).strip()
+                if s == "" or s.lower() in ("none", "unknown", "unavailable"):
+                    return None
                 try:
                     return float(s)
                 except ValueError:
                     return None
 
-            def _i(s: str) -> int | None:
+            def _i(s: Any) -> int | None:
+                if s is None:
+                    return None
+                s = str(s).strip()
+                if s == "" or s.lower() in ("none", "unknown", "unavailable"):
+                    return None
                 try:
                     return int(float(s))
                 except ValueError:
                     return None
 
             result.update(
-                status=status_raw if status_raw else None,
-                power=_f(power_raw),
-                current=_f(current_raw),
-                energy_forward=_f(energy_raw),
-                session_time=_i(session_time_raw),
-                startstop=_i(startstop_raw),
-                setcurrent=_f(setcurrent_raw),
+                status=_str_or_none(data.get("status")),
+                power=_f(data.get("power")),
+                current=_f(data.get("current")),
+                energy_forward=_f(data.get("energy_forward")),
+                session_time=_i(data.get("session_time")),
+                startstop=_i(data.get("startstop")),
+                setcurrent=_f(data.get("setcurrent")),
                 ok=True,
             )
             self.last_known = {k: result[k] for k in self.last_known}
