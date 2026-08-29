@@ -1,0 +1,36 @@
+#!/bin/bash
+#
+# dbus-evcharger SetupHelper package script (PackageManager / GUI v1).
+# Install logic lives in update.sh; this file is the SetupHelper entry point.
+#
+
+#### following line incorporates SetupHelper resources into this script
+source "/data/SetupHelper/HelperResources/IncludeHelpers"
+#### end of lines to include helper resources
+
+if [ "$scriptAction" == 'NONE' ]; then
+    standardActionPrompt
+fi
+
+if [ "$scriptAction" == 'INSTALL' ]; then
+    logMessage "Installing $packageName"
+    if [ ! -f "$scriptDir/local_config.py" ] && [ -f "$scriptDir/local_config.example.py" ]; then
+        cp "$scriptDir/local_config.example.py" "$scriptDir/local_config.py"
+        logMessage "seeded local_config.py from example"
+    fi
+    sh "$scriptDir/update.sh" "$scriptDir"
+fi
+
+if [ "$scriptAction" == 'UNINSTALL' ]; then
+    logMessage "Uninstalling $packageName"
+    svc -dk "/service/dbus-evcharger/log" "/service/dbus-evcharger" 2>/dev/null || true
+    rm -rf "/service/dbus-evcharger"
+    if [ -f /data/rc.local ]; then
+        sed -i '/# === dbus-evcharger service persistence ===/,/# === end dbus-evcharger ===/d' /data/rc.local 2>/dev/null || true
+    fi
+    # Keep local_config.py; PackageManager removes the package tree.
+fi
+
+# Services are installed by update.sh (symlink into /data/.../service),
+# not by SetupHelper's INSTALL_SERVICE copier.
+endScript
