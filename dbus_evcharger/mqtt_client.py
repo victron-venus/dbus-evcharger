@@ -29,7 +29,6 @@ class MqttClient:
         self.password = password
         self.topic = topic
         self.qos = qos
-        self._configured = bool(host)
         self._connected = False
         self._snapshot: dict[str, Any] = {
             "status": None,

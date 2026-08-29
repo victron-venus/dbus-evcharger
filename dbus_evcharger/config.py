@@ -71,8 +71,8 @@ DEFAULT_CUSTOM_NAME: str = str(_get("DEFAULT_CUSTOM_NAME", "EV Charger"))
 
 
 def ha_configured() -> bool:
-    """True when HA REST API is configured."""
-    return bool(HA_URL and HA_TOKEN and HA_STATUS_ENTITY)
+    """True when HA REST API is configured (base_url + token only)."""
+    return bool(HA_URL and HA_TOKEN)
 
 
 def mqtt_configured() -> bool:

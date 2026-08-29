@@ -43,4 +43,4 @@ disable = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=dbus_evcharger --cov-report=term-missing --cov-fail-under=60"
+addopts = "--cov=dbus_evcharger --cov-report=term-missing --cov-fail-under=80"
