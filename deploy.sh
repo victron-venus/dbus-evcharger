@@ -36,7 +36,10 @@ echo "    Syntax OK"
 # aborts the whole chain if update.sh fails, so the deploy is atomic-ish.
 #
 echo ">>> Streaming repository to $SSH_HOST and running update.sh..."
-tar \
+# macOS bsdtar otherwise writes AppleDouble (._*) and pax LIBARCHIVE.xattr.*
+# headers (com.apple.provenance) that Venus/busybox tar warns about on extract.
+COPYFILE_DISABLE=1 tar \
+    --no-xattrs \
     --exclude='.git' \
     --exclude='__pycache__' \
     --exclude='*.pyc' \
