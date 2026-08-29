@@ -12,3 +12,4 @@ htmlcov/
 dbus_evcharger.egg-info/
 *.backup
 .pytest_cache/
+uv.lock
