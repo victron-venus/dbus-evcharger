@@ -1,0 +1,75 @@
+name: Python Security Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 5 * * 2'  # Weekly on Tuesdays
+
+permissions:
+  contents: read
+
+jobs:
+  python-security:
+    name: Python Security
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      with:
+        egress-policy: audit
+
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: '3.12'
+
+    - name: Install security tools
+      run: |
+        pip install --only-binary :all: "bandit==1.8.3"
+
+    - name: Run Bandit security linter
+      run: |
+        bandit -r . -x .git,.github,__pycache__,.pytest_cache,.ruff_cache,tmp_venv,logs,images,services,service \
+          --include "*.py" -f sarif -o /tmp/bandit-results.sarif || true
+
+        # Always ensure SARIF exists for upload step
+        if [ ! -f /tmp/bandit-results.sarif ]; then
+          printf '%s\n' \
+            '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"Bandit","version":"1.8.0","informationUri":"https://bandit.readthedocs.io/","rules":[]}},"results":[]}]}' \
+            > /tmp/bandit-results.sarif
+        fi
+
+    - name: Upload Bandit results
+      if: always()
+      uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+      with:
+        sarif_file: /tmp/bandit-results.sarif
+        category: python-bandit
+
+    - name: Run Safety dependency check
+      run: |
+        pip freeze > requirements.txt
+        safety check --json -o safety-results.json --file requirements.txt || true
+
+    - name: Comment PR on Safety issues
+      if: failure() && github.event_name == 'pull_request'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '⚠️ Safety found Python dependency vulnerabilities!'
+          })

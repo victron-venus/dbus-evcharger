@@ -1,0 +1,4 @@
+#!/bin/sh
+cd /data/dbus-evcharger || exit 1
+exec 2>&1
+exec python3 -m dbus_evcharger
