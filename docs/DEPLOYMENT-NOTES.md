@@ -9,8 +9,9 @@ Venus OS v3.75, portal ID `b827ebea1ece`.
   `/service/dbus-evcharger`; logs in `/var/log/dbus-evcharger` via multilog.
 - Deploy path: `./deploy.sh` from a dev machine (rsync + on-device
   `update.sh`), or the auto-deploy webhook from inverter-monitoring.
-- Default D-Bus instance is 40: bus name `com.victronenergy.evcharger.ha`
+- Default D-Bus instance is 40: bus name `com.victronenergy.evcharger.charger`
   (textual suffix per D-Bus spec; the `40` lives only in `/DeviceInstance`).
+  Must differ from `dbus-ev`'s suffix (`"ha"`) to avoid well-known-name collision.
 - All D-Bus paths follow the VE.Dbus evcharger specification
   (https://github.com/victronenergy/venus/wiki/dbus#evcharger).
 
@@ -18,7 +19,7 @@ Venus OS v3.75, portal ID `b827ebea1ece`.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Invalid bus name 'com.victronenergy.evcharger.40'` | bus names forbid digits after the last dot | textual suffix (e.g. `evcharger.ha`, `evcharger.ttyO1`); instance only in `/DeviceInstance`. `EvChargerService(bus_suffix=...)` default `"ha"`. |
+| `Invalid bus name 'com.victronenergy.evcharger.40'` | bus names forbid digits after the last dot | textual suffix (e.g. `evcharger.ha`, `evcharger.ttyO1`); instance only in `/DeviceInstance`. `EvChargerService(bus_suffix=...)` default `"charger"`. |
 | `KeyError: Can't register object-path '/'` on 2nd service | VeDbusService defaults to the shared bus and exports `/` | one `dbus.SystemBus(private=True)` per service |
 | `add_path() unexpected kwarg 'onchange'` | vedbus API is `onchangecallback=path,value` | aligned mock + real signature |
 | `'VeDbusService' has no attribute 'items'` | it's not a dict | mirror values as instance attributes |
