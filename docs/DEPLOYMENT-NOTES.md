@@ -9,8 +9,9 @@ Venus OS v3.75, portal ID `b827ebea1ece`.
   `/service/dbus-evcharger`; logs in `/var/log/dbus-evcharger` via multilog.
 - Deploy path: `./deploy.sh` from a dev machine (rsync + on-device
   `update.sh`), or the auto-deploy webhook from inverter-monitoring.
-- Default D-Bus instance is 40: bus name `com.victronenergy.evcharger.ha`
+- Default D-Bus instance is 40: bus name `com.victronenergy.evcharger.charger`
   (textual suffix per D-Bus spec; the `40` lives only in `/DeviceInstance`).
+  Must differ from `dbus-ev`'s suffix (`"ha"`) to avoid well-known-name collision.
 - All D-Bus paths follow the VE.Dbus evcharger specification
   (https://github.com/victronenergy/venus/wiki/dbus#evcharger).
 

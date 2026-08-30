@@ -7,6 +7,8 @@ def build(**kw):
     kw.setdefault("on_mode", lambda m: None)
     kw.setdefault("on_startstop", lambda s: None)
     kw.setdefault("on_setcurrent", lambda c: None)
+    # bus_suffix="charger" mirrors actual runtime (config.BUS_SUFFIX default)
+    kw.setdefault("bus_suffix", "charger")
     return EvChargerService(
         instance=40,
         version="0.1.0",
@@ -20,8 +22,9 @@ def build(**kw):
 def test_service_name():
     s = build()
     # D-Bus bus names forbid digits after the last dot; instance lives in
-    # /DeviceInstance, suffix is textual.
-    assert s.svc.service_name == "com.victronenergy.evcharger.ha"
+    # /DeviceInstance, suffix is textual. Default suffix "charger" must
+    # differ from dbus-ev's "ha" to avoid well-known-name collision.
+    assert s.svc.service_name == "com.victronenergy.evcharger.charger"
 
 
 def test_service_name_custom_suffix():

@@ -34,6 +34,10 @@ def _read_version() -> str:
 
 # --- D-Bus identity ----------------------------------------------------------
 DEVICE_INSTANCE: int = int(_get("DEVICE_INSTANCE", 40))
+# Textual D-Bus bus suffix; integer instance lives in /DeviceInstance only.
+# Must differ from dbus-ev's suffix ("ha") so both services can coexist on
+# the same Cerbo without well-known-name collision.
+BUS_SUFFIX: str = str(_get("BUS_SUFFIX", "charger"))
 PRODUCT_NAME = "dbus-evcharger"
 SOFTWARE_VERSION = _read_version()
 

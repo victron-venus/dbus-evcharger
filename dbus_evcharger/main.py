@@ -48,6 +48,7 @@ def build_service() -> EvChargerService:
         custom_name=config.DEFAULT_CUSTOM_NAME,
         product_name=config.PRODUCT_NAME,
         connection="Home Assistant" if config.ha_configured() else "Local",
+        bus_suffix=config.BUS_SUFFIX,
         on_mode=lambda m: None,  # override in app if needed
         on_startstop=lambda ss: None,
         on_setcurrent=lambda sc: None,
