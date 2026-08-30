@@ -14,16 +14,17 @@ import requests
 logger = logging.getLogger(__name__)
 
 # Jinja template sent to /api/template. Tokens are replaced literally
-# (str.format would fight the Jinja braces). Optional entities omitted
-# when empty -> emit null via conditional Jinja.
+# (str.format would fight the Jinja braces). Use ternary (if/else inside
+# {{ }}), not {% if %} control blocks — control blocks leave dangling commas
+# when the entity is empty, producing invalid JSON and HTTP 400.
 TEMPLATE_BODY = """{{ {
-  'status': states('@STATUS@') | string,
-  'power': {% if '@POWER@' != '' %}states('@POWER@') | float(0){% else %}none{% endif %},
-  'current': {% if '@CURRENT@' != '' %}states('@CURRENT@') | float(0){% else %}none{% endif %},
-  'energy_forward': {% if '@ENERGY@' != '' %}states('@ENERGY@') | float(0){% else %}none{% endif %},
-  'session_time': {% if '@SESSION_TIME@' != '' %}states('@SESSION_TIME@') | int(0){% else %}none{% endif %},
-  'startstop': {% if '@STARTSTOP@' != '' %}states('@STARTSTOP@') | int(0){% else %}none{% endif %},
-  'setcurrent': {% if '@SETCURRENT@' != '' %}states('@SETCURRENT@') | float(0){% else %}none{% endif %}
+  "status": states('@STATUS@') | string,
+  "power": states('@POWER@') | float(0) if '@POWER@' != '' else none,
+  "current": states('@CURRENT@') | float(0) if '@CURRENT@' != '' else none,
+  "energy_forward": states('@ENERGY@') | float(0) if '@ENERGY@' != '' else none,
+  "session_time": states('@SESSION_TIME@') | int(0) if '@SESSION_TIME@' != '' else none,
+  "startstop": states('@STARTSTOP@') | int(0) if '@STARTSTOP@' != '' else none,
+  "setcurrent": states('@SETCURRENT@') | float(0) if '@SETCURRENT@' != '' else none
 } | to_json }}"""
 
 
@@ -32,7 +33,7 @@ class HomeAssistantError(Exception):
 
 
 class HomeAssistantAPIError(HomeAssistantError):
-    pass
+    """Raised when HA returns a non-2xx response to /api/template."""
 
 
 def _str_or_none(s: Any) -> str | None:
@@ -97,6 +98,8 @@ def build_template(
 
 
 class HaClient:
+    """Batch-fetch charger entities from HA /api/template with last-known fallback."""
+
     def __init__(
         self,
         base_url: str,
