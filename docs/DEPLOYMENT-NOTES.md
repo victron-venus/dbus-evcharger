@@ -19,7 +19,7 @@ Venus OS v3.75, portal ID `b827ebea1ece`.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Invalid bus name 'com.victronenergy.evcharger.40'` | bus names forbid digits after the last dot | textual suffix (e.g. `evcharger.ha`, `evcharger.ttyO1`); instance only in `/DeviceInstance`. `EvChargerService(bus_suffix=...)` default `"ha"`. |
+| `Invalid bus name 'com.victronenergy.evcharger.40'` | bus names forbid digits after the last dot | textual suffix (e.g. `evcharger.ha`, `evcharger.ttyO1`); instance only in `/DeviceInstance`. `EvChargerService(bus_suffix=...)` default `"charger"`. |
 | `KeyError: Can't register object-path '/'` on 2nd service | VeDbusService defaults to the shared bus and exports `/` | one `dbus.SystemBus(private=True)` per service |
 | `add_path() unexpected kwarg 'onchange'` | vedbus API is `onchangecallback=path,value` | aligned mock + real signature |
 | `'VeDbusService' has no attribute 'items'` | it's not a dict | mirror values as instance attributes |
