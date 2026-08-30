@@ -30,6 +30,11 @@ All notable changes to this project will be documented in this file.
 - README: full EV charger data-flow diagram (HA sensors → dbus-evcharger → D-Bus → Cerbo MQTT topics → consumers) and control flow diagram; consumer table
 - local_config.example.py updated with EV charger defaults
 
+## [0.1.1] - 2026-08-29
+
+### Changed
+- Version bump to 0.1.1 (Venus `version` file / package).
+
 ## [0.1.0] - 2026-08-29
 
 ### Added
