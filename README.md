@@ -117,7 +117,7 @@ Copy `local_config.example.py` to `local_config.py` on the device and fill in:
 | `DEFAULT_MIN_CURRENT` | default min current limit (A) | 6.0 |
 | `DEFAULT_NR_OF_PHASES` | default number of phases | 1 |
 | `DEFAULT_CUSTOM_NAME` | default custom name for the charger | "EV Charger" |
-| `POLL_INTERVAL` | seconds between HA polls | 2.0 |
+| `POLL_INTERVAL` | seconds between HA polls | 15.0 |
 | `HA_TIMEOUT` | seconds before HA request times out | 3.0 |
 
 ### Control flow

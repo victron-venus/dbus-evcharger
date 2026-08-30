@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Default `POLL_INTERVAL` 2.0s → 15.0s.
+
 ### Added
 - `DEVICE_INSTANCE` config → `/DeviceInstance` on the evcharger service
 - All standard VE.Dbus evcharger paths registered:
