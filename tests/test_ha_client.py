@@ -92,10 +92,8 @@ def test_build_template_empty_optional_entities():
     assert "sensor.evcharger_power" in t
     assert "sensor.evcharger_current" in t
     assert "sensor.evcharger_energy_total" in t
-    # Empty optional entities produce 'none' branch (template has whitespace)
-    assert "'session_time': {% if '' != '' %}" in t
-    assert "'startstop': {% if '' != '' %}" in t
-    assert "'setcurrent': {% if '' != '' %}" in t
+    # Empty optional entities produce 'else none' branch (ternary, not {% if %})
+    assert "if '' != '' else none" in t
     # Each optional entity has a 'none' fallback branch
     assert t.count("none") >= 3
 
@@ -150,7 +148,7 @@ def test_poll_failure_serves_last_known(post):
     first = c.poll()
     assert first["ok"] is True
 
-    from requests.exceptions import Timeout
+    from requests.exceptions import Timeout  # noqa: C0415
 
     post.side_effect = Timeout("boom")
     second = c.poll()
@@ -164,13 +162,13 @@ def test_circuit_breaker_opens_and_resets(post):
     clock = FakeClock()
     breaker = CircuitBreaker(threshold=3, reset_timeout=60.0)
 
-    import dbus_evcharger.ha_client as mod
+    import dbus_evcharger.ha_client as mod  # noqa: C0415
 
     real_monotonic = mod.time.monotonic
     mod.time.monotonic = lambda: clock.t
 
     try:
-        from requests.exceptions import ConnectionError as ReqConnError
+        from requests.exceptions import ConnectionError as ReqConnError  # noqa: C0415
 
         post.side_effect = ReqConnError("down")
         c = make_client(breaker=breaker)
