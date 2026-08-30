@@ -31,3 +31,7 @@ DEFAULT_MAX_CURRENT = 32.0  # A
 DEFAULT_MIN_CURRENT = 6.0  # A
 DEFAULT_NR_OF_PHASES = 1
 DEFAULT_CUSTOM_NAME = "EV Charger"
+
+# Polling
+POLL_INTERVAL = 15.0  # seconds between HA polls
+HA_TIMEOUT = 3.0  # seconds before HA request times out

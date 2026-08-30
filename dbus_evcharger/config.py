@@ -62,7 +62,7 @@ MQTT_TOPIC: str = str(_get("MQTT_TOPIC", "evcharger"))
 MQTT_QOS: int = int(_get("MQTT_QOS", 1))
 
 # --- polling ----------------------------------------------------------------
-POLL_INTERVAL: float = float(_get("POLL_INTERVAL", 2.0))  # s
+POLL_INTERVAL: float = float(_get("POLL_INTERVAL", 15.0))  # s
 HA_TIMEOUT: float = float(_get("HA_TIMEOUT", 3.0))
 HEARTBEAT_FILE = "/run/dbus-evcharger/heartbeat"
 

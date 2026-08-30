@@ -113,6 +113,14 @@ def test_poll_interval_type():
     assert isinstance(config.POLL_INTERVAL, float)
 
 
+def test_poll_interval_default_is_15s():
+    """Default POLL_INTERVAL is 15.0 seconds when local_config missing."""
+    import importlib
+
+    importlib.reload(config)
+    assert config.POLL_INTERVAL == 15.0
+
+
 def test_heartbeat_file_is_string():
     """HEARTBEAT_FILE is a string path."""
     assert isinstance(config.HEARTBEAT_FILE, str)
