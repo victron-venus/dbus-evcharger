@@ -98,8 +98,8 @@ class GridVoltageReader:
             if result.returncode != 0:
                 return None
 
-            # variant: double variant: <float64 234.5>
-            m = re.search(r"float64\s+([\d.]+)", result.stdout)
+            # variant: double variant: <float64 234.5> or <double 123.82>
+            m = re.search(r"(?:float64|double)\s+([\d.]+)", result.stdout)
             if m:
                 return float(m.group(1))
 
