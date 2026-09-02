@@ -23,7 +23,6 @@ def test_update_charging_with_l2():
         status=2,
         current=40.0,
         power=9600.0,
-        energy_forward=10.5,
         l1_power=4800.0,
         l1_voltage=240.0,
         l1_current=20.0,
