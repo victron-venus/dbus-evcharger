@@ -160,7 +160,6 @@ class App:
             status=status,
             current=snap.get("current", 0),
             power=power,
-            energy_forward=snap.get("energy_forward", 0),
             l1_power=snap.get("l1_power", 0) or (power / 2 if power else 0),
             l1_voltage=v_l1,
             l1_current=i_l1,
@@ -183,9 +182,12 @@ class App:
         )
 
     def _update_session_from_snapshot(self, snap: dict) -> None:
+        # HA sensor.home_2_1d = Emporia daily consumption (resets midnight) — not lifetime.
+        # Map to /Session/Energy (current session) instead of /Ac/Energy/Forward (lifetime).
+        session_energy = snap.get("session_energy") or snap.get("energy_forward", 0)
         self.service.update_session(
             session_time=snap.get("session_time", 0),
-            session_energy=snap.get("session_energy", 0),
+            session_energy=session_energy,
         )
         self.service.svc["/Session/Cost"] = snap.get("session_cost", 0)
         self.service.svc["/Session/SavedCost"] = snap.get("session_saved_cost", 0)

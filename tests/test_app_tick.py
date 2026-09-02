@@ -40,7 +40,7 @@ def build_app(snapshot, ha_client=None, mqtt_client=None):
     return app
 
 
-BASE = {"status": "charging", "power": 3800, "current": 16, "energy_forward": 12.5}
+BASE = {"status": "charging", "power": 3800, "current": 16, "session_energy": 12.5}
 
 
 def test_tick_publishes_values(monkeypatch):
@@ -50,7 +50,7 @@ def test_tick_publishes_values(monkeypatch):
     assert app.service.svc["/Status"] == 2  # charging
     assert app.service.svc["/Ac/Power"] == 3800.0
     assert app.service.svc["/Current"] == 16.0
-    assert app.service.svc["/Ac/Energy/Forward"] == 12.5
+    assert app.service.svc["/Session/Energy"] == 12.5
 
 
 def test_tick_commands_startstop_from_snapshot(monkeypatch):

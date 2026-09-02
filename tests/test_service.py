@@ -65,7 +65,6 @@ def test_charging_update():
         status=2,
         current=16.5,
         power=3800.0,
-        energy_forward=12.5,
         l1_power=3800.0,
         l1_voltage=230.0,
         l1_current=16.5,
@@ -76,7 +75,6 @@ def test_charging_update():
     assert s.svc["/Status"] == 2
     assert s.svc["/Current"] == 16.5
     assert s.svc["/Ac/Power"] == 3800.0
-    assert s.svc["/Ac/Energy/Forward"] == 12.5
     assert s.svc["/Ac/L1/Power"] == 3800.0
     assert s.svc["/Ac/L1/Voltage"] == 230.0
     assert s.svc["/Ac/L1/Current"] == 16.5

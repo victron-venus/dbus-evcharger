@@ -228,7 +228,6 @@ class EvChargerService:
         status: int,
         current: float,
         power: float,
-        energy_forward: float,
         l1_power: float = 0,
         l1_voltage: float = 0,
         l1_current: float = 0,
@@ -240,11 +239,15 @@ class EvChargerService:
         frequency: float = 0,
         nr_of_phases: int = 1,
     ) -> None:
-        """Update all charging metrics. All numeric values, not strings."""
+        """Update all charging metrics. All numeric values, not strings.
+
+        /Ac/Energy/Forward is left untouched (lifetime kWh — caller may set
+        via service.svc[...] if a lifetime sensor is available). Session
+        energy belongs in update_session().
+        """
         self.svc["/Status"] = status
         self.svc["/Current"] = round(current, 2)
         self.svc["/Ac/Power"] = round(power, 1)
-        self.svc["/Ac/Energy/Forward"] = round(energy_forward, 3)
         self.svc["/Ac/Frequency"] = round(frequency, 2)
         self.svc["/NrOfPhases"] = nr_of_phases
         self.svc["/Ac/L1/Power"] = round(l1_power, 1)
