@@ -79,15 +79,22 @@ class GridVoltageReader:
         return None
 
     def _read_dbus(self, path: str, silent: bool = False) -> float | None:
-        """Read a single D-Bus path via dbus-send."""
+        """Read a single D-Bus path via dbus-send.
+
+        `path` is a full D-Bus object path including the destination service,
+        e.g. "com.victronenergy.grid.ve_HQ2446VDDEZ/Ac/L1/Voltage". We split
+        on the first "/" to extract the destination and pass the rest as the
+        object path.
+        """
         try:
+            dest, _, obj_path = path.partition("/")
             result = subprocess.run(
                 [
                     "dbus-send",
                     "--system",
                     "--print-reply",
-                    f"--dest={path.split('/')[0]}",
-                    path,
+                    f"--dest={dest}",
+                    f"/{obj_path}",
                     "com.victronenergy.BusItem.GetValue",
                 ],
                 capture_output=True,
@@ -98,8 +105,8 @@ class GridVoltageReader:
             if result.returncode != 0:
                 return None
 
-            # variant: double variant: <float64 234.5>
-            m = re.search(r"float64\s+([\d.]+)", result.stdout)
+            # variant: double variant: <float64 234.5> or <double 123.82>
+            m = re.search(r"(?:float64|double)\s+([\d.]+)", result.stdout)
             if m:
                 return float(m.group(1))
 
