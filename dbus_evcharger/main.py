@@ -158,7 +158,7 @@ class App:
 
         self.service.update_charging(
             status=status,
-            current=snap.get("current", 0),
+            current=snap.get("current") or 0,
             power=power,
             l1_power=snap.get("l1_power", 0) or (power / 2 if power else 0),
             l1_voltage=v_l1,
