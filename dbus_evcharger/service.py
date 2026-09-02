@@ -233,6 +233,10 @@ class EvChargerService:
         l1_voltage: float = 0,
         l1_current: float = 0,
         l1_power_factor: float = 0,
+        l2_power: float = 0,
+        l2_voltage: float = 0,
+        l2_current: float = 0,
+        l2_power_factor: float = 0,
         frequency: float = 0,
         nr_of_phases: int = 1,
     ) -> None:
@@ -247,6 +251,10 @@ class EvChargerService:
         self.svc["/Ac/L1/Voltage"] = round(l1_voltage, 1)
         self.svc["/Ac/L1/Current"] = round(l1_current, 2)
         self.svc["/Ac/L1/PowerFactor"] = round(l1_power_factor, 3)
+        self.svc["/Ac/L2/Power"] = round(l2_power, 1)
+        self.svc["/Ac/L2/Voltage"] = round(l2_voltage, 1)
+        self.svc["/Ac/L2/Current"] = round(l2_current, 2)
+        self.svc["/Ac/L2/PowerFactor"] = round(l2_power_factor, 3)
 
     def update_session(self, session_time: int, session_energy: float) -> None:
         """Update session counters."""

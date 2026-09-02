@@ -29,6 +29,7 @@ from dbus_evcharger.service import (
     VEDBUS_AVAILABLE,
     EvChargerService,
 )
+from dbus_evcharger.voltage import GridVoltageReader
 
 logger = logging.getLogger("dbus-evcharger")
 
@@ -68,10 +69,12 @@ class App:
         ha_client: HaClient | None,
         mqtt_client: MqttClient | None,
         service: EvChargerService,
+        voltage_reader: GridVoltageReader | None = None,
     ) -> None:
         self.ha_client = ha_client
         self.mqtt_client = mqtt_client
         self.service = service
+        self.voltage_reader = voltage_reader or GridVoltageReader()
         self.last_ok_time: float | None = None
         # last successful poll
         self.loop_interval_ms = max(250, int(config.POLL_INTERVAL * 1000))
@@ -103,6 +106,11 @@ class App:
             self.last_ok_time is not None and (_now() - self.last_ok_time) < config.HA_TIMEOUT * 3
         )
         self.service.set_connected(now_ok and ha_reachable)
+
+        # refresh grid voltage (autodetected, cached)
+        v_l1, v_l2 = self.voltage_reader.read()
+        snapshot["l1_voltage"] = v_l1 if v_l1 is not None else snapshot.get("l1_voltage", 0)
+        snapshot["l2_voltage"] = v_l2 if v_l2 is not None else snapshot.get("l2_voltage", 0)
 
         # update charging metrics if we have fresh data
         if now_ok:
@@ -141,17 +149,28 @@ class App:
         status_str = str(snap.get("status", "")).lower().replace(" ", "_")
         status = status_map.get(status_str, STATUS_DISCONNECTED)
 
+        power = snap.get("power", 0) or 0
+        v_l1 = snap.get("l1_voltage", 0) or 0
+        v_l2 = snap.get("l2_voltage", 0) or 0
+        # Derive per-phase current: I = P / V (split-phase wallbox, equal load)
+        i_l1 = power / v_l1 if v_l1 > 50 else (snap.get("l1_current", 0) or 0)
+        i_l2 = power / v_l2 if v_l2 > 50 else (snap.get("l2_current", 0) or 0)
+
         self.service.update_charging(
             status=status,
             current=snap.get("current", 0),
-            power=snap.get("power", 0),
+            power=power,
             energy_forward=snap.get("energy_forward", 0),
-            l1_power=snap.get("l1_power", 0),
-            l1_voltage=snap.get("l1_voltage", 0),
-            l1_current=snap.get("l1_current", 0),
+            l1_power=snap.get("l1_power", 0) or (power / 2 if power else 0),
+            l1_voltage=v_l1,
+            l1_current=i_l1,
             l1_power_factor=snap.get("l1_power_factor", 0),
+            l2_power=snap.get("l2_power", 0) or (power / 2 if power else 0),
+            l2_voltage=v_l2,
+            l2_current=i_l2,
+            l2_power_factor=snap.get("l2_power_factor", 0),
             frequency=snap.get("frequency", 0),
-            nr_of_phases=snap.get("nr_of_phases", 1),
+            nr_of_phases=snap.get("nr_of_phases", 2),
         )
 
         # alarms
