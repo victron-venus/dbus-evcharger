@@ -104,7 +104,7 @@ def _make_service(service_name: str):
     if VEDBUS_AVAILABLE:
         import dbus
 
-        return VeDbusService(service_name, bus=dbus.SystemBus(private=True))
+        return VeDbusService(service_name, bus=dbus.SystemBus(private=True), register=False)
     return NullDbusService(service_name)
 
 
@@ -144,8 +144,10 @@ class EvChargerService:
         on_mode=None,
         on_startstop=None,
         on_setcurrent=None,
+        register: bool = True,
     ) -> None:
         self.instance = instance
+        self._registered = False
         # D-Bus bus names forbid digits after the last dot; instance lives in
         # /DeviceInstance only. Matches Victron convention (ttyO1, ha, etc.).
         bus_name = f"com.victronenergy.evcharger.{bus_suffix}"
@@ -232,6 +234,16 @@ class EvChargerService:
         self.svc.add_path("/Alarms/DisplayFWUpdateFailure1", 0)
         self.svc.add_path("/Alarms/DisplayFWUpdateFailure2", 0)
         self.svc.add_path("/Alarms/DisplayFWUpdateInProgress", 0)
+
+        if register:
+            self.register()
+
+    def register(self) -> None:
+        """Claim the bus name once, after paths and caller defaults are ready."""
+        if not self._registered:
+            if VEDBUS_AVAILABLE:
+                self.svc.register()
+            self._registered = True
 
     # --- updates -----------------------------------------------------------
 

@@ -90,6 +90,7 @@ def build_service() -> EvChargerService:
         on_mode=lambda m: None,  # override in app if needed
         on_startstop=lambda ss: None,
         on_setcurrent=lambda sc: None,
+        register=False,
     )
     # apply defaults
     service.svc["/Position"] = config.DEFAULT_POSITION
@@ -97,6 +98,8 @@ def build_service() -> EvChargerService:
     service.svc["/MinCurrent"] = config.DEFAULT_MIN_CURRENT
     service.svc["/NrOfPhases"] = config.DEFAULT_NR_OF_PHASES
     service.set_device_info(model="Unknown", serial=f"dbusevcharger-{config.DEVICE_INSTANCE}")
+    service.set_connected(False)
+    service.register()
     return service
 
 

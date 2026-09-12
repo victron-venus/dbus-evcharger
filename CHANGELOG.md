@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2026-09-12
+
+### Fixed
+- Defer native D-Bus name registration until all mandatory and device paths, configured initial values, and callbacks are ready. Register each private-bus service once.
+- Publish the production service as disconnected until a valid source snapshot arrives; preserve control defaults and existing freshness deadlines.
+- Verify native registration order, configured values, idempotence and failure before publication with isolated fake-bus regressions.
+
 ## [0.1.3] - 2026-09-12
 
 ### Fixed
