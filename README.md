@@ -179,3 +179,57 @@ Tests run fully off-GX (D-Bus and HA/MQTT are mocked).
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+
+## Venus OS installation and recovery
+
+Use the canonical `/data/dbus-evcharger` directory. Both `setup install`
+(SetupHelper/PackageManager) and the workstation `deploy.sh` call `update.sh`.
+A release is staged under volatile `/tmp` before stopping the service, so
+reinstalling from the installed tree does not delete the update source.
+The updater preserves `local_config.py`; `deploy.sh` deliberately replaces it
+when the workstation has a local copy (`PUSH_LOCAL_CONFIG=1`).
+Existing service and log directory inodes, ownership, supervisor state and the
+canonical `/service` symlink are preserved. Only the application is stopped;
+run scripts are replaced atomically and a healthy logger keeps running.
+Ordinary updates do not restart PackageManager. A stuck application receives
+one supervisor-scoped kill after twenty seconds; installation aborts if it is
+still running after twenty-five seconds. Unexpected service links, real `/service`
+directories or legacy firmware copies require a separate migration before
+updating; the updater leaves them untouched.
+
+Service definitions persist under `/data/dbus-evcharger/service/dbus-evcharger`.
+`/service/dbus-evcharger` is a symlink recreated by `/data/rc.local`, including
+when that script already ends with `exit 0`. The logger recreates its volatile
+`/var/log/dbus-evcharger` directory and rotates four 25 KB files. Heartbeats
+also live on volatile storage. Runtime data does not require writes to the
+read-only firmware filesystem. Firmware updates can replace system Python
+packages; check dependencies after each update before assuming the service is
+healthy. The installer does not run `pip` or upgrade system packages.
+
+Before installation, check the target interpreter:
+
+```sh
+python3 --version
+python3 -c "import requests, dbus, paho.mqtt.client; from gi.repository import GLib"
+```
+
+Verify a running process and its D-Bus data after installation:
+
+```sh
+svstat /service/dbus-evcharger /service/dbus-evcharger/log
+readlink /service/dbus-evcharger
+tail -n 40 /var/log/dbus-evcharger/current
+```
+
+`update.sh` confirms termination before copying but does not wait for a fresh
+process or heartbeat after requesting startup. The deployment caller must
+verify startup and D-Bus availability.
+
+`deploy.sh` fails if a fresh heartbeat does not appear within 60 seconds or the
+service never reaches `up`. A heartbeat proves the loop is running, not that
+Home Assistant is reachable: also inspect `/Connected` and the log. Restore a
+previous release with its `update.sh`, keeping the device-local configuration.
+Installer regressions cover repeated updates with live directory handles,
+supervisor-state and ownership preservation, atomic run-script replacement,
+configuration, safe rejection before stopping, and boot hooks before `exit 0`.
