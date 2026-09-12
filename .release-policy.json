@@ -1,0 +1,20 @@
+{
+  "validation_workflows": [
+    "ci.yml",
+    "release-security.yml",
+    "codeql.yml"
+  ],
+  "artifact_pattern": "release-assets*",
+  "local_checks": [
+    "bash scripts/ci.sh",
+    "bash scripts/ci.sh security"
+  ],
+  "notes": [
+    "Hardware-free checks do not validate a live Venus OS device, D-Bus firmware ABI, physical sensors or in-place device upgrades.",
+    "Candidate packaging preserves committed runtime version metadata. Nightly/beta/RC identity is recorded by the release manifest."
+  ],
+  "version_file": "version",
+  "mode": "release",
+  "repository": "victron-venus/dbus-evcharger",
+  "visibility": "public"
+}
