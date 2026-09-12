@@ -169,7 +169,7 @@ ssh cerbo 'svc -dk /service/dbus-evcharger/log /service/dbus-evcharger; rm /serv
 
 ```sh
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+uv sync --locked --extra dev
 python3 -m pytest tests/
 python3 -m ruff check .
 ```
