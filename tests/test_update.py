@@ -14,7 +14,7 @@ import pytest
 def venus_layout_fixture(tmp_path):
     """Create isolated device roots and record supervisor commands."""
     repo = Path(__file__).resolve().parents[1]
-    name = repo.name
+    name = "dbus-evcharger"
     root = tmp_path / "venus"
     install = root / "data" / name
     install.mkdir(parents=True)

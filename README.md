@@ -122,11 +122,11 @@ Copy `local_config.example.py` to `local_config.py` on the device and fill in:
 
 ### Control flow
 
-- **HA primary**: Service polls HA REST API for all sensor values every POLL_INTERVAL seconds.
-- **MQTT fallback**: If HA is unavailable and MQTT is enabled, falls back to last MQTT message.
-- **Stale data**: If both sources fail, last known values are retained until connection restored.
-- **Write path**: Changes to `/Mode`, `/StartStop`, or `/SetCurrent` in Venus OS/VRM are written
-  back to HA (switch/number entities) or MQTT (command topics) if configured.
+- **HA primary**: A single background worker polls HA and grid voltage at the configured `POLL_INTERVAL`. Requests are coalesced while a job or its main-loop delivery is pending; slow HTTP/D-Bus reads cannot block the GLib loop. Results publish immediately when delivered on that loop.
+- **MQTT fallback**: If HA has no usable status and power, the main loop reads the optional nonblocking MQTT cache at least once per second, independently of the slower HA request schedule. One paho loop owns connection attempts and reconnects. Status and power must each have arrived within five seconds; other topics, broker connection and reconnect cannot renew them. Optional fields expire independently.
+- **Freshness**: The main loop admits a worker result only within `max(3 * HA_TIMEOUT, 2 * POLL_INTERVAL)` seconds of collection start. MQTT fields retain their original five-second expiry. Expiry is checked at most one second apart under normal event-loop scheduling; these are not hard real-time guarantees. Failed, expired or non-finite required values clear `/Connected` and measurement paths. Fresh usable readings restore them. Cached grid voltages are reused only within the same acquisition-age limit.
+- **Measurements**: Missing optional values stay invalid rather than becoming zero. Each phase's current uses its own measured or estimated power and voltage. Balanced power estimates use `DEFAULT_NR_OF_PHASES`; explicit zero power and measured currents are retained.
+- **Control mirroring**: Configured HA/MQTT start/stop and current values are mirrored into the D-Bus control paths. The current service callbacks do not send D-Bus writes back to HA or MQTT; this release does not add physical charger actuation.
 
 ## Install
 
@@ -157,11 +157,10 @@ ssh cerbo 'svc -dk /service/dbus-evcharger/log /service/dbus-evcharger; rm /serv
 
 ## Safety model
 
-- **Connection monitoring**: `/Connected` on D-Bus service reflects HA/MQTT connectivity.
-- **Manual override**: `/Mode`, `/StartStop`, `/SetCurrent` on D-Bus service accept writes from VRM/GUI
-  and forward them to HA/MQTT.
-- **Numeric values**: All metrics are numeric (int/float) as per VE.Dbus specification — no strings.
-- **Graceful shutdown**: SIGTERM stops the update loop and exits cleanly.
+- **Connection monitoring**: `/Connected` means usable, unexpired charger status and power; a connected broker alone is insufficient.
+- **Control paths**: `/Mode`, `/StartStop` and `/SetCurrent` are exposed on D-Bus. Accepted local path writes do not prove a charger command was sent or accepted by hardware.
+- **Numeric values**: Measurements are finite numeric values or invalid D-Bus values. Unknown source states and unavailable power do not become connected zero-power readings.
+- **Graceful shutdown**: SIGTERM stops poll submission and suppresses queued or late callbacks. The worker closes clients after its active bounded read finishes; shutdown waits up to one second and the worker is a daemon thread. An in-flight network read cannot be retracted.
 - **Off-GX testing**: Service uses `NullDbusService` when venibus Python packages unavailable
   (development/testing on laptop).
 
@@ -175,6 +174,9 @@ python3 -m ruff check .
 ```
 
 Tests run fully off-GX (D-Bus and HA/MQTT are mocked).
+Worker tests cover blocked reads, main-loop delivery, late results and shutdown;
+MQTT tests cover independent expiry, reconnect and invalid payloads. These tests
+do not verify physical charging, actual broker outages or power-cycle startup.
 
 ## License
 

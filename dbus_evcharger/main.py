@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import math
 import os
 import signal
 import sys
@@ -30,8 +31,44 @@ from dbus_evcharger.service import (
     EvChargerService,
 )
 from dbus_evcharger.voltage import GridVoltageReader
+from dbus_evcharger.worker import PollWorker
 
 logger = logging.getLogger("dbus-evcharger")
+
+_STATUS_MAP = {
+    "disconnected": STATUS_DISCONNECTED,
+    "connected": STATUS_CONNECTED,
+    "charging": STATUS_CHARGING,
+    "charged": STATUS_CHARGED,
+    "waiting_for_sun": STATUS_WAITING_FOR_SUN,
+    "waiting_for_rfid": STATUS_WAITING_FOR_RFID,
+    "waiting_for_start": STATUS_WAITING_FOR_START,
+    "low_soc": STATUS_LOW_SOC,
+    "ground_test_error": STATUS_GROUND_TEST_ERROR,
+    "welded_contacts_error": STATUS_WELDED_CONTACTS_ERROR,
+    "cp_input_test_error": STATUS_CP_INPUT_TEST_ERROR,
+    "residual_current": STATUS_RESIDUAL_CURRENT_DETECTED,
+    "undervoltage": STATUS_UNDERVOLTAGE_DETECTED,
+    "overvoltage": STATUS_OVERVOLTAGE_DETECTED,
+    "overheating": STATUS_OVERTEMPERATURE_DETECTED,
+}
+
+
+def _finite(value):
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _usable(snapshot):
+    return (
+        snapshot.get("ok")
+        and snapshot.get("status") is not None
+        and str(snapshot["status"]).strip().lower().replace(" ", "_") in _STATUS_MAP
+        and _finite(snapshot.get("power")) is not None
+    )
 
 
 def _setup_logging(debug: bool) -> None:
@@ -64,6 +101,8 @@ def build_service() -> EvChargerService:
 
 
 class App:
+    """Publish fresh source telemetry without blocking the D-Bus main loop."""
+
     def __init__(
         self,
         ha_client: HaClient | None,
@@ -77,40 +116,82 @@ class App:
         self.voltage_reader = voltage_reader or GridVoltageReader()
         self.last_ok_time: float | None = None
         # last successful poll
-        self.loop_interval_ms = max(250, int(config.POLL_INTERVAL * 1000))
+        self.loop_interval_ms = max(250, min(1000, int(config.POLL_INTERVAL * 1000)))
+        self._poll_interval = max(0.25, config.POLL_INTERVAL)
+        self._next_poll_at = None
         self._last_commanded_mode: int | None = None  # track to avoid spamming
         self._last_commanded_startstop: int | None = None
         self._last_commanded_setcurrent: float | None = None
+        self._worker = None
+        self._snapshot = {}
+        self._snapshot_at = None
 
     # --- main loop --------------------------------------------------------
-    def tick(self) -> bool:
-        # try HA first, then MQTT, then fallback
+    def _collect_snapshot(self):
+        """Collect blocking inputs on the worker, without touching D-Bus paths."""
+        # MQTT snapshots are nonblocking and belong to main-loop publication.
         snapshot = {}
         source = None
 
         if self.ha_client and self.ha_client._configured:
             ha_data = self.ha_client.poll()
-            if ha_data.get("ok"):
+            if _usable(ha_data):
                 snapshot.update(ha_data)
                 source = "ha"
-        if not source and self.mqtt_client and self.mqtt_client._configured:
-            mqtt_data = self.mqtt_client.poll()
-            if mqtt_data.get("ok"):
-                snapshot.update(mqtt_data)
-                source = "mqtt"
-
-        now_ok = source is not None
-        if now_ok:
-            self.last_ok_time = _now()
-        ha_reachable = (
-            self.last_ok_time is not None and (_now() - self.last_ok_time) < config.HA_TIMEOUT * 3
-        )
-        self.service.set_connected(now_ok and ha_reachable)
-
         # refresh grid voltage (autodetected, cached)
         v_l1, v_l2 = self.voltage_reader.read()
-        snapshot["l1_voltage"] = v_l1 if v_l1 is not None else snapshot.get("l1_voltage", 0)
-        snapshot["l2_voltage"] = v_l2 if v_l2 is not None else snapshot.get("l2_voltage", 0)
+        snapshot["l1_voltage"] = v_l1 if v_l1 is not None else snapshot.get("l1_voltage")
+        snapshot["l2_voltage"] = v_l2 if v_l2 is not None else snapshot.get("l2_voltage")
+        snapshot["ok"] = source is not None
+        return snapshot
+
+    def _accept_snapshot(self, snapshot, started):
+        self._snapshot = snapshot
+        self._snapshot_at = started
+        self._publish_snapshot()
+
+    def tick(self) -> bool:
+        if self._worker is None:
+            # Explicit one-shot/dry-run use; serve() always installs a worker.
+            started = _now()
+            self._accept_snapshot(self._collect_snapshot(), started)
+            return True
+        now = _now()
+        if (self._next_poll_at is None or now >= self._next_poll_at) and self._worker.poll(
+            self._accept_snapshot
+        ):
+            self._next_poll_at = now + self._poll_interval
+        return self._publish_snapshot()
+
+    def _publish_snapshot(self) -> bool:
+        """Publish on GLib delivery/ticks; only HA/grid collection is scheduled."""
+        now = _now()
+        snapshot = dict(self._snapshot)
+        for field, deadline in snapshot.pop("_expires_at", {}).items():
+            if now >= deadline:
+                snapshot[field] = None
+        ttl = max(config.HA_TIMEOUT * 3, config.POLL_INTERVAL * 2)
+        collected_fresh = self._snapshot_at is not None and 0 <= now - self._snapshot_at < ttl
+        using_ha = collected_fresh and _usable(snapshot)
+        if not using_ha:
+            # One paho thread maintains this cache; poll never waits for DNS/TCP.
+            mqtt_data = (
+                self.mqtt_client.poll()
+                if self.mqtt_client is not None and self.mqtt_client._configured
+                else {}
+            )
+            snapshot = dict(mqtt_data)
+            for field, deadline in snapshot.pop("_expires_at", {}).items():
+                if now >= deadline:
+                    snapshot[field] = None
+            for field in ("l1_voltage", "l2_voltage"):
+                voltage = self._snapshot.get(field) if collected_fresh else None
+                if voltage is not None:
+                    snapshot[field] = voltage
+        now_ok = _usable(snapshot)
+        self.service.set_connected(bool(now_ok))
+        if now_ok:
+            self.last_ok_time = self._snapshot_at if using_ha else now
 
         # update charging metrics if we have fresh data
         if now_ok:
@@ -120,56 +201,65 @@ class App:
         else:
             # stale: mark as unknown
             self.service.svc["/Status"] = STATUS_DISCONNECTED
-            self.service.svc["/Current"] = None
-            self.service.svc["/Ac/Power"] = None
-            self.service.svc["/Ac/Energy/Forward"] = None
+            for path in (
+                "/Current",
+                "/Ac/Power",
+                "/Ac/Energy/Forward",
+                "/Ac/Frequency",
+                "/Ac/L1/Power",
+                "/Ac/L1/Voltage",
+                "/Ac/L1/Current",
+                "/Ac/L1/PowerFactor",
+                "/Ac/L2/Power",
+                "/Ac/L2/Voltage",
+                "/Ac/L2/Current",
+                "/Ac/L2/PowerFactor",
+                "/Session/Time",
+                "/Session/Energy",
+            ):
+                self.service.svc[path] = None
 
         _write_heartbeat()
         return True
 
     def _update_charging_from_snapshot(self, snap: dict) -> None:
         """Map snapshot keys to service paths."""
-        status_map = {
-            "disconnected": STATUS_DISCONNECTED,
-            "connected": STATUS_CONNECTED,
-            "charging": STATUS_CHARGING,
-            "charged": STATUS_CHARGED,
-            "waiting_for_sun": STATUS_WAITING_FOR_SUN,
-            "waiting_for_rfid": STATUS_WAITING_FOR_RFID,
-            "waiting_for_start": STATUS_WAITING_FOR_START,
-            "low_soc": STATUS_LOW_SOC,
-            "ground_test_error": STATUS_GROUND_TEST_ERROR,
-            "welded_contacts_error": STATUS_WELDED_CONTACTS_ERROR,
-            "cp_input_test_error": STATUS_CP_INPUT_TEST_ERROR,
-            "residual_current": STATUS_RESIDUAL_CURRENT_DETECTED,
-            "undervoltage": STATUS_UNDERVOLTAGE_DETECTED,
-            "overvoltage": STATUS_OVERVOLTAGE_DETECTED,
-            "overheating": STATUS_OVERTEMPERATURE_DETECTED,
-        }
-        status_str = str(snap.get("status", "")).lower().replace(" ", "_")
-        status = status_map.get(status_str, STATUS_DISCONNECTED)
+        status_str = str(snap.get("status", "")).strip().lower().replace(" ", "_")
+        status = _STATUS_MAP.get(status_str, STATUS_DISCONNECTED)
 
-        power = snap.get("power", 0) or 0
-        v_l1 = snap.get("l1_voltage", 0) or 0
-        v_l2 = snap.get("l2_voltage", 0) or 0
-        # Derive per-phase current: I = P / V (split-phase wallbox, equal load)
-        i_l1 = power / v_l1 if v_l1 > 50 else (snap.get("l1_current", 0) or 0)
-        i_l2 = power / v_l2 if v_l2 > 50 else (snap.get("l2_current", 0) or 0)
+        power = _finite(snap.get("power"))
+        v_l1 = _finite(snap.get("l1_voltage"))
+        v_l2 = _finite(snap.get("l2_voltage"))
+        phases = _finite(snap.get("nr_of_phases", config.DEFAULT_NR_OF_PHASES))
+        phases = int(phases) if phases in (1, 2) else config.DEFAULT_NR_OF_PHASES
+        p_l1 = _finite(snap.get("l1_power"))
+        p_l2 = _finite(snap.get("l2_power"))
+        if p_l1 is None and power is not None:
+            p_l1 = power / phases
+        if p_l2 is None and power is not None and phases == 2:
+            p_l2 = power / phases
+        # Each phase's current uses that phase's power, not total charger power.
+        i_l1 = _finite(snap.get("l1_current"))
+        i_l2 = _finite(snap.get("l2_current"))
+        if i_l1 is None and p_l1 is not None and v_l1 is not None and v_l1 > 50:
+            i_l1 = p_l1 / v_l1
+        if i_l2 is None and p_l2 is not None and v_l2 is not None and v_l2 > 50:
+            i_l2 = p_l2 / v_l2
 
         self.service.update_charging(
             status=status,
-            current=snap.get("current") or 0,
+            current=_finite(snap.get("current")),
             power=power,
-            l1_power=snap.get("l1_power", 0) or (power / 2 if power else 0),
+            l1_power=p_l1,
             l1_voltage=v_l1,
             l1_current=i_l1,
-            l1_power_factor=snap.get("l1_power_factor", 0),
-            l2_power=snap.get("l2_power", 0) or (power / 2 if power else 0),
+            l1_power_factor=_finite(snap.get("l1_power_factor")),
+            l2_power=p_l2,
             l2_voltage=v_l2,
             l2_current=i_l2,
-            l2_power_factor=snap.get("l2_power_factor", 0),
-            frequency=snap.get("frequency", 0),
-            nr_of_phases=snap.get("nr_of_phases", 2),
+            l2_power_factor=_finite(snap.get("l2_power_factor")),
+            frequency=_finite(snap.get("frequency")),
+            nr_of_phases=phases,
         )
 
         # alarms
@@ -184,10 +274,12 @@ class App:
     def _update_session_from_snapshot(self, snap: dict) -> None:
         # HA sensor.home_2_1d = Emporia daily consumption (resets midnight) — not lifetime.
         # Map to /Session/Energy (current session) instead of /Ac/Energy/Forward (lifetime).
-        session_energy = snap.get("session_energy") or snap.get("energy_forward", 0)
+        session_energy = snap.get("session_energy")
+        if session_energy is None:
+            session_energy = snap.get("energy_forward")
         self.service.update_session(
-            session_time=snap.get("session_time", 0),
-            session_energy=session_energy,
+            session_time=_finite(snap.get("session_time")),
+            session_energy=_finite(session_energy),
         )
         self.service.svc["/Session/Cost"] = snap.get("session_cost", 0)
         self.service.svc["/Session/SavedCost"] = snap.get("session_saved_cost", 0)
@@ -207,15 +299,16 @@ class App:
 
         # StartStop
         startstop = snap.get("startstop")
-        if isinstance(startstop, (int, float)) and startstop != self._last_commanded_startstop:
+        if startstop in (0, 1) and startstop != self._last_commanded_startstop:
             logger.info("Setting start/stop to %s", startstop)
             self.service.svc["/StartStop"] = int(startstop)
             self._last_commanded_startstop = int(startstop)
 
         # SetCurrent
-        setcurrent = snap.get("setcurrent")
+        setcurrent = _finite(snap.get("setcurrent"))
         if (
-            isinstance(setcurrent, (int, float))
+            setcurrent is not None
+            and 0 <= setcurrent <= config.DEFAULT_MAX_CURRENT
             and abs(setcurrent - (self._last_commanded_setcurrent or 0)) > 0.1
         ):
             logger.info("Setting set current to %.1f A", setcurrent)
@@ -225,10 +318,21 @@ class App:
     # --- lifecycle ---------------------------------------------------------
     def shutdown(self) -> None:
         logger.info("Shutting down")
+        if self._worker is not None:
+            self._worker.stop()
+        else:
+            self._close_clients()
+
+    def _close_clients(self):
+        if self.ha_client is not None and hasattr(self.ha_client, "close"):
+            self.ha_client.close()
+        if self.mqtt_client is not None:
+            self.mqtt_client.disconnect()
 
     def serve(self) -> None:
         from gi.repository import GLib  # provided by Venus OS python env
 
+        self._worker = PollWorker(self._collect_snapshot, GLib.idle_add, self._close_clients)
         GLib.timeout_add(self.loop_interval_ms, self.tick)
         mainloop = GLib.MainLoop()
 

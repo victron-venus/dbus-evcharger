@@ -6,6 +6,7 @@ numeric values for charging current (A), power (W), energy (kWh), etc.
 
 import json
 import logging
+import math
 import time
 from typing import Any
 
@@ -19,12 +20,12 @@ logger = logging.getLogger(__name__)
 # when the entity is empty, producing invalid JSON and HTTP 400.
 TEMPLATE_BODY = """{{ {
   "status": states('@STATUS@') | string,
-  "power": states('@POWER@') | float(0) if '@POWER@' != '' else none,
-  "current": states('@CURRENT@') | float(0) if '@CURRENT@' != '' else none,
-  "energy_forward": states('@ENERGY@') | float(0) if '@ENERGY@' != '' else none,
-  "session_time": states('@SESSION_TIME@') | int(0) if '@SESSION_TIME@' != '' else none,
-  "startstop": states('@STARTSTOP@') | int(0) if '@STARTSTOP@' != '' else none,
-  "setcurrent": states('@SETCURRENT@') | float(0) if '@SETCURRENT@' != '' else none
+  "power": states('@POWER@') if '@POWER@' != '' else none,
+  "current": states('@CURRENT@') if '@CURRENT@' != '' else none,
+  "energy_forward": states('@ENERGY@') if '@ENERGY@' != '' else none,
+  "session_time": states('@SESSION_TIME@') if '@SESSION_TIME@' != '' else none,
+  "startstop": states('@STARTSTOP@') if '@STARTSTOP@' != '' else none,
+  "setcurrent": states('@SETCURRENT@') if '@SETCURRENT@' != '' else none
 } | to_json }}"""
 
 
@@ -179,6 +180,8 @@ class HaClient:
             if resp.status_code != 200:
                 raise HomeAssistantAPIError(f"/api/template HTTP {resp.status_code}")
             data = json.loads(resp.text)
+            if not isinstance(data, dict):
+                raise HomeAssistantAPIError("HA template response must be an object")
 
             def _f(s: Any) -> float | None:
                 if s is None:
@@ -187,7 +190,8 @@ class HaClient:
                 if s == "" or s.lower() in ("none", "unknown", "unavailable"):
                     return None
                 try:
-                    return float(s)
+                    value = float(s)
+                    return value if math.isfinite(value) else None
                 except ValueError:
                     return None
 
@@ -197,10 +201,8 @@ class HaClient:
                 s = str(s).strip()
                 if s == "" or s.lower() in ("none", "unknown", "unavailable"):
                     return None
-                try:
-                    return int(float(s))
-                except ValueError:
-                    return None
+                value = _f(s)
+                return int(value) if value is not None else None
 
             result.update(
                 status=_str_or_none(data.get("status")),
@@ -227,3 +229,6 @@ class HaClient:
             self.breaker.record_failure()
             self._log_error_throttled(f"HA template returned invalid JSON: {exc}")
         return result
+
+    def close(self) -> None:
+        self._session.close()
