@@ -169,7 +169,7 @@ ssh cerbo 'svc -dk /service/dbus-evcharger/log /service/dbus-evcharger; rm /serv
 
 ```sh
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+uv sync --locked --extra dev
 python3 -m pytest tests/
 python3 -m ruff check .
 ```
@@ -188,7 +188,7 @@ Use the canonical `/data/dbus-evcharger` directory. Both `setup install`
 A release is staged under volatile `/tmp` before stopping the service, so
 reinstalling from the installed tree does not delete the update source.
 The updater preserves `local_config.py`; `deploy.sh` deliberately replaces it
-when the workstation has a local copy (`PUSH_LOCAL_`local_config.py`=1`).
+when the workstation has a local copy (`PUSH_LOCAL_CONFIG=1`).
 
 Service definitions persist under `/data/dbus-evcharger/service/dbus-evcharger`.
 `/service/dbus-evcharger` is a symlink recreated by `/data/rc.local`, including
