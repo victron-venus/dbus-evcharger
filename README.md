@@ -202,9 +202,11 @@ updating; the updater leaves them untouched.
 
 Service definitions persist under `/data/dbus-evcharger/service/dbus-evcharger`.
 `/service/dbus-evcharger` is a symlink recreated by `/data/rc.local`, including
-when that script already ends with `exit 0`. The logger recreates its volatile
-`/var/log/dbus-evcharger` directory and rotates four 25 KB files. Heartbeats
-also live on volatile storage. Runtime data does not require writes to the
+when that script already ends with `exit 0`. The logger creates
+`/var/log/dbus-evcharger` and uses bounded `multilog` rotation (`s25000 n4`).
+On the audited Venus OS image, `/var/log` resolves to persistent `/data/log`,
+so these logs write flash. Heartbeats live in volatile `/run` storage.
+Runtime data does not require writes to the
 read-only firmware filesystem. Firmware updates can replace system Python
 packages; check dependencies after each update before assuming the service is
 healthy. The installer does not run `pip` or upgrade system packages.
