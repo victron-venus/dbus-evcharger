@@ -8,8 +8,20 @@ imports cleanly without velib_python/dbus.
 """
 
 import logging
+import math
 
 logger = logging.getLogger(__name__)
+
+
+def _round_valid(value, digits):
+    if value is None:
+        return None
+    try:
+        number = float(value)
+        return round(number, digits) if math.isfinite(number) else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
 
 VEDBUS_AVAILABLE = False
 try:
@@ -246,23 +258,23 @@ class EvChargerService:
         energy belongs in update_session().
         """
         self.svc["/Status"] = status
-        self.svc["/Current"] = round(current, 2)
-        self.svc["/Ac/Power"] = round(power, 1)
-        self.svc["/Ac/Frequency"] = round(frequency, 2)
+        self.svc["/Current"] = _round_valid(current, 2)
+        self.svc["/Ac/Power"] = _round_valid(power, 1)
+        self.svc["/Ac/Frequency"] = _round_valid(frequency, 2)
         self.svc["/NrOfPhases"] = nr_of_phases
-        self.svc["/Ac/L1/Power"] = round(l1_power, 1)
-        self.svc["/Ac/L1/Voltage"] = round(l1_voltage, 1)
-        self.svc["/Ac/L1/Current"] = round(l1_current, 2)
-        self.svc["/Ac/L1/PowerFactor"] = round(l1_power_factor, 3)
-        self.svc["/Ac/L2/Power"] = round(l2_power, 1)
-        self.svc["/Ac/L2/Voltage"] = round(l2_voltage, 1)
-        self.svc["/Ac/L2/Current"] = round(l2_current, 2)
-        self.svc["/Ac/L2/PowerFactor"] = round(l2_power_factor, 3)
+        self.svc["/Ac/L1/Power"] = _round_valid(l1_power, 1)
+        self.svc["/Ac/L1/Voltage"] = _round_valid(l1_voltage, 1)
+        self.svc["/Ac/L1/Current"] = _round_valid(l1_current, 2)
+        self.svc["/Ac/L1/PowerFactor"] = _round_valid(l1_power_factor, 3)
+        self.svc["/Ac/L2/Power"] = _round_valid(l2_power, 1)
+        self.svc["/Ac/L2/Voltage"] = _round_valid(l2_voltage, 1)
+        self.svc["/Ac/L2/Current"] = _round_valid(l2_current, 2)
+        self.svc["/Ac/L2/PowerFactor"] = _round_valid(l2_power_factor, 3)
 
     def update_session(self, session_time: int, session_energy: float) -> None:
         """Update session counters."""
         self.svc["/Session/Time"] = session_time
-        self.svc["/Session/Energy"] = round(session_energy, 3)
+        self.svc["/Session/Energy"] = _round_valid(session_energy, 3)
 
     def update_alarms(
         self,

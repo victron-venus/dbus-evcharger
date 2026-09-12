@@ -26,7 +26,7 @@ class TestMqttClient:
     def test_poll_not_connected_connect_raises(self):
         c = MqttClient(host="mqtt.local")
         with patch("paho.mqtt.client.Client") as mock_client_cls:
-            mock_client_cls.return_value.connect.side_effect = OSError("no broker")
+            mock_client_cls.return_value.connect_async.side_effect = OSError("no broker")
             result = c.poll()
             assert result["ok"] is False
 
@@ -35,18 +35,17 @@ class TestMqttClient:
 
         c = MqttClient(host="mqtt.local")
         c._connected = True
-        c._last_ok = time.monotonic() - 10
+        c._received_at = {"status": time.monotonic() - 10, "power": time.monotonic() - 10}
         result = c.poll()
         assert result["ok"] is False
 
     def test_poll_connected_fresh_data(self):
-        import time
-
         c = MqttClient(host="mqtt.local")
         c._connected = True
-        c._last_ok = time.monotonic()
-        c._snapshot["ok"] = True
-        result = c.poll()
+        c._update_field("status", "charging")
+        c._update_field("power", "3800")
+        with patch.object(c, "_connect"):
+            result = c.poll()
         assert result["ok"] is True
 
     def test_update_field_startstop_int(self):
@@ -77,15 +76,16 @@ class TestMqttClient:
         c = MqttClient(host="mqtt.local")
         c._update_field("unknown_field", "42")
 
-    def test_update_field_sets_ok_true(self):
-        c = MqttClient(host="mqtt.local")
+    def test_power_without_status_is_not_usable(self):
+        c = MqttClient(host="")
+        c._connected = True
         c._update_field("power", "3800")
-        assert c._snapshot["ok"] is True
+        assert c.poll()["ok"] is False
 
     def test_poll_connect_import_error(self):
         c = MqttClient(host="mqtt.local")
         with patch("paho.mqtt.client.Client") as mock_client_cls:
-            mock_client_cls.return_value.connect.side_effect = ImportError("module not found")
+            mock_client_cls.return_value.connect_async.side_effect = ImportError("module not found")
             result = c.poll()
             assert result["ok"] is False
 
@@ -113,6 +113,7 @@ class TestMqttClient:
         with patch("paho.mqtt.client.Client") as mock_client_cls:
             mock_client_cls.return_value.connect.return_value = None
             c._connect()
+            c._client.on_connect(c._client, None, None, 0)
             on_message_cb = c._client.on_message
             msg = MagicMock()
             msg.topic = "evcharger/power"

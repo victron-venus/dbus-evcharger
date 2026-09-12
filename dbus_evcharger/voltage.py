@@ -5,8 +5,10 @@ for current derivation: I = P / V (240V split-phase wallbox).
 """
 
 import logging
+import math
 import re
 import subprocess
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +26,17 @@ class GridVoltageReader:
         self._voltage_l1: float | None = None
         self._voltage_l2: float | None = None
         self._grid_service: str | None = None
+        self._next_discovery = 0.0
 
     def read(self) -> tuple[float | None, float | None]:
         """Poll voltages. Returns (l1_voltage, l2_voltage) or (None, None)."""
         # lazy discovery
-        if self._grid_service is None and dbus is not None:
+        if (
+            self._grid_service is None
+            and dbus is not None
+            and time.monotonic() >= self._next_discovery
+        ):
+            self._next_discovery = time.monotonic() + 5.0
             self._grid_service = self._discover_grid_service()
 
         if self._grid_service is None:
@@ -40,10 +48,10 @@ class GridVoltageReader:
         l1 = self._read_dbus(f"{self._grid_service}/Ac/L1/Voltage")
         l2 = self._read_dbus(f"{self._grid_service}/Ac/L2/Voltage")
 
-        if l1 is not None:
-            self._voltage_l1 = l1
-        if l2 is not None:
-            self._voltage_l2 = l2
+        self._voltage_l1 = l1
+        self._voltage_l2 = l2
+        if l1 is None and l2 is None:
+            self._grid_service = None
 
         return self._voltage_l1, self._voltage_l2
 
@@ -106,21 +114,23 @@ class GridVoltageReader:
                 return None
 
             # variant: double variant: <float64 234.5> or <double 123.82>
-            m = re.search(r"(?:float64|double)\s+([\d.]+)", result.stdout)
+            m = re.search(r"(?:float64|double)\s+([^\s>]+)", result.stdout)
             if m:
-                return float(m.group(1))
+                value = float(m.group(1))
+                return value if math.isfinite(value) and value > 0 else None
 
             # variant: variant <int32 234>
             m = re.search(r"variant\s+<int32\s+(\d+)>", result.stdout)
             if m:
-                return float(m.group(1))
+                value = float(m.group(1))
+                return value if value > 0 else None
 
             if not silent:
                 logger.debug(
                     "No float64/int32 in dbus-send output for %s: %s", path, result.stdout[:200]
                 )
             return None
-        except (OSError, subprocess.TimeoutExpired) as e:
+        except (OSError, subprocess.TimeoutExpired, ValueError, OverflowError) as e:
             if not silent:
                 logger.debug("dbus-send read failed for %s: %s", path, e)
             return None

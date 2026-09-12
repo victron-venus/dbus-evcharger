@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-09-12
+
+### Fixed
+- Move blocking HA and grid-voltage reads to one coalescing worker so the D-Bus main loop stays responsive during slow requests. Deliver results on the main loop, retain acquisition timestamps, and discard callbacks after shutdown.
+- Keep one reconnecting MQTT client and expire each field independently after five seconds. Reconnect, unrelated topics and delayed delivery cannot renew old status or power.
+- Publish worker results immediately and check MQTT freshness at least once per second without accelerating the configured HA/grid polling interval.
+- Treat unavailable, unknown and non-finite source values as invalid. Clear stale measurements instead of publishing zero, and clear cached voltage after source loss before rediscovery.
+- Derive each phase's current from its own power using the configured phase count. Preserve explicit zero readings, measured phase currents and invalid optional values.
+
+### Documentation
+- Describe actual freshness deadlines, worker shutdown and the current telemetry-only control mirroring. Physical charger actuation and broker/network failure drills remain separate validation boundaries.
+
 ## [Unreleased]
 
 ### Changed
