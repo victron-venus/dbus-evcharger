@@ -60,6 +60,6 @@ jobs:
         with:
           version: '0.12.7'
       - name: Install locked development environment
-        run: uv sync --locked --extra dev --python 3.11
+        run: uv sync --locked --extra dev --python 3.11 --no-build --no-install-project
       - name: Test locked runtime dependencies
-        run: uv run --locked --extra dev pytest
+        run: .venv/bin/python -m pytest
