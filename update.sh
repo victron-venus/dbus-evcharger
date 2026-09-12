@@ -4,13 +4,13 @@
 #
 # Ships inside the release tarball and runs ON the Venus OS device to install
 # the release into INSTALL_DIR (default /data/dbus-evcharger). It is invoked
-# by the auto-deploy webhook (../inverter-monitoring) or manually:
+# by SetupHelper or manually:
 #
 #     sh update.sh [INSTALL_DIR]
 #
 # This script owns all layout knowledge (runtime files, daemontools services,
 # /service symlinks, device-local file preservation, restart order) so that
-# callers like the webhook never need to hardcode where files go. Adding a new
+# callers never need to hardcode where files go. Adding a new
 # module or a new daemontools service requires a change here only.
 #
 set -eu
@@ -48,6 +48,9 @@ from gi.repository import GLib
 from vedbus import VeDbusService
 PYTHON
 
+command -v svc >/dev/null
+command -v svstat >/dev/null
+
 # Stage the release before stopping anything. SetupHelper runs this script from
 # the installed package tree, which must not be deleted while it is our source.
 # /tmp is volatile on Venus OS and avoids writing an extra release to flash.
@@ -63,64 +66,59 @@ find "$STAGING_DIR/source" -type d -name supervise -prune -exec rm -rf {} \;
 SRC_DIR="$STAGING_DIR/source"
 cd "$STAGING_DIR"
 
-# 1. Stop the services BEFORE touching files so a half-written tree is never
-#    executed and the multilog log dir is not disturbed under a running logger.
-for svc in /service/dbus-evcharger/log /service/dbus-evcharger; do
-    [ -e "$svc" ] && svc -dk "$svc" 2>/dev/null || true
+# Validate the owned service layout before stopping a healthy worker. Ordinary
+# updates preserve the service/log directories and their live supervisors.
+SERVICE_TARGET="$INSTALL_DIR/service/dbus-evcharger"
+SERVICE_LINK="/service/dbus-evcharger"
+UNIT_SOURCE="$SRC_DIR/service/dbus-evcharger"
+[ -d "$UNIT_SOURCE" ] || UNIT_SOURCE="$SRC_DIR/services/dbus-evcharger"
+for run_file in run log/run; do
+    if [ ! -f "$UNIT_SOURCE/$run_file" ]; then
+        echo "Missing service definition: $UNIT_SOURCE/$run_file" >&2
+        exit 1
+    fi
 done
-sleep 1
-
-# 1c. Reap stale daemontools supervise processes left behind by earlier
-#     updates. Every time a service dir under $INSTALL_DIR/service is replaced
-#     the inode changes, so svscan spawns a NEW supervise and the old one is
-#     never killed - they linger forever with "(deleted)" cwd. Several
-#     supervisors on one service corrupt runit state (broken log pipes that
-#     crash print() with EPIPE, and down services that svc -u cannot bring up).
-#     The same inode churn also orphans the run processes themselves
-#     (cwd == $INSTALL_DIR): when a supervise dies, svc -dk can no longer
-#     reach its child, so it keeps running the old code and hammering D-Bus
-#     next to the new instance. Drop the /service symlinks first so svscan
-#     does not respawn supervisors while we replace the dirs below, then kill
-#     matching service workers and daemontools supervisors. Fresh
-#     supervisors are spawned in step 6.
-#     rm -rf (not rm -f): a pre-existing legacy install may have left a real
-#     directory here; ln -sf onto a directory would nest the link inside it.
-rm -rf /service/dbus-evcharger
-sleep 2
-for pid in /proc/[0-9]*; do
-    cwd=$(readlink "$pid/cwd" 2>/dev/null) || continue
-    case "$cwd" in
-        "$INSTALL_DIR/service/"*)
-            # Limit cleanup to daemontools, never an installer or login shell.
-            comm=$(cat "$pid/comm" 2>/dev/null) || continue
-            case "$comm" in
-                supervise|multilog) kill -9 "${pid##*/}" 2>/dev/null || true ;;
-            esac
-            ;;
-        "$INSTALL_DIR")
-            command_line=$(tr '\000' ' ' < "$pid/cmdline" 2>/dev/null) || continue
-            case "$command_line" in
-                *"python"*" -m dbus_evcharger"|*"python"*" -m dbus_evcharger "*)
-                    kill -9 "${pid##*/}" 2>/dev/null || true ;;
-            esac
-            ;;
-        *)
-            # Ignore processes outside our install tree
-            ;;
-    esac
-done
-sleep 1
-
-# 1d. Remove the legacy single-script install. Venus OS boot machinery links
-#     everything under /opt/victronenergy into /service at startup, so a left-
-#     over copy there resurrects a REAL /service/dbus-evcharger directory after
-#     every reboot - and the later `ln -sf` in step 6/rc.local then silently
-#     fails onto that directory, running stale code forever (seen 2026-08-25).
-LEGACY_OPT="/opt/victronenergy/dbus-evcharger"
-if [ -e "$LEGACY_OPT" ]; then
-    rm -rf "$LEGACY_OPT"
-    sep "removed legacy $LEGACY_OPT"
+if [ -L "$SERVICE_LINK" ]; then
+    if [ "$(readlink "$SERVICE_LINK")" != "$SERVICE_TARGET" ]; then
+        echo "Refusing to replace an unexpected service symlink: $SERVICE_LINK" >&2
+        exit 1
+    fi
+elif [ -e "$SERVICE_LINK" ]; then
+    echo "Legacy service directory requires migration before updating: $SERVICE_LINK" >&2
+    exit 1
 fi
+for directory in "$INSTALL_DIR/service" "$SERVICE_TARGET" "$SERVICE_TARGET/log"; do
+    if [ -L "$directory" ] || { [ -e "$directory" ] && [ ! -d "$directory" ]; }; then
+        echo "Unexpected service directory layout: $directory" >&2
+        exit 1
+    fi
+done
+LEGACY_OPT="/opt/victronenergy/dbus-evcharger"
+if [ -e "$LEGACY_OPT" ] || [ -L "$LEGACY_OPT" ]; then
+    echo "Legacy firmware installation requires migration before updating: $LEGACY_OPT" >&2
+    exit 1
+fi
+
+# Stop only the application; its existing logger and supervisors stay alive.
+# Verify termination before replacing Python files. A stuck worker gets one
+# supervisor-scoped kill after twenty seconds; unrelated processes are untouched.
+stop_worker() {
+    [ -e "$SERVICE_LINK" ] || return 0
+    svc -d "$SERVICE_LINK" || return 1
+    waited=0
+    while [ "$waited" -lt 25 ]; do
+        status=$(svstat "$SERVICE_LINK" 2>/dev/null || true)
+        case "$status" in *": down "*) return 0 ;; esac
+        if [ "$waited" -eq 20 ]; then
+            svc -k "$SERVICE_LINK" || return 1
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    echo "Service did not stop; runtime files were not changed: $SERVICE_LINK" >&2
+    return 1
+}
+stop_worker
 
 mkdir -p "$INSTALL_DIR"
 sep "installing from $SRC_DIR into $INSTALL_DIR"
@@ -141,20 +139,21 @@ for item in $RUNTIME_ITEMS; do
     fi
 done
 
-# 4. Install daemontools services: every dir under service/ and services/
-#    maps to INSTALL_DIR/service/. New services are picked up automatically.
-#    A manual `svc -d` on the device leaves a `down` file behind, which would
-#    keep the service "normally down" across reboots even after `svc -u` -
-#    a deploy means "run the new version", so drop them.
-mkdir -p "$INSTALL_DIR/service"
-for svc in "$SRC_DIR/service"/* "$SRC_DIR/services"/*; do
-    [ -d "$svc" ] || continue
-    name="$(basename "$svc")"
-    rm -rf "$INSTALL_DIR/service/$name"
-    cp -a "$svc" "$INSTALL_DIR/service/$name"
-    find "$INSTALL_DIR/service/$name" -type f -name run -exec chmod +x {} \; 2>/dev/null || true
-    find "$INSTALL_DIR/service/$name" -name down -exec rm -f {} \; 2>/dev/null || true
+# Replace only the two owned run scripts, using rename in each destination
+# directory. Open files, log pipes, directory ownership and supervise state
+# survive the update. A running multilog uses the new script on its next start.
+mkdir -p "$SERVICE_TARGET/log"
+for run_file in run log/run; do
+    destination="$SERVICE_TARGET/$run_file"
+    temporary=$(mktemp "$(dirname "$destination")/.run.XXXXXX")
+    if [ -f "$destination" ]; then
+        cp -p "$destination" "$temporary"
+    fi
+    cat "$UNIT_SOURCE/$run_file" > "$temporary"
+    chmod 755 "$temporary"
+    mv -f "$temporary" "$destination"
 done
+rm -f "$SERVICE_TARGET/down" "$SERVICE_TARGET/log/down"
 
 # 5. Restore device-local files and drop stale flat-file leftovers.
 for f in $LOCAL_ONLY; do
@@ -162,7 +161,7 @@ for f in $LOCAL_ONLY; do
 done
 rm -rf "$TMP_BACKUP"
 for f in $STALE_TOP_LEVEL; do
-    rm -f "$INSTALL_DIR/$f"
+    rm -rf "${INSTALL_DIR:?}/$f"
 done
 
 # 5b. Optional: push the developer's local_config.py instead of keeping the
@@ -175,15 +174,14 @@ if [ "${PUSH_LOCAL_CONFIG:-0}" = "1" ] && [ -f "$SRC_DIR/local_config.py" ]; the
     sep "pushed local_config.py (PUSH_LOCAL_CONFIG=1)"
 fi
 
-# 6. Refresh /service symlinks.
-ln -sf "$INSTALL_DIR/service/dbus-evcharger" /service/
+# A valid existing symlink must retain its inode too. Never replace a live
+# service directory or move another service out of the way.
+if [ ! -L "$SERVICE_LINK" ]; then
+    ln -s "$SERVICE_TARGET" "$SERVICE_LINK"
+fi
 
-# 6a. Ensure boot persistence: /service is tmpfs, so rc.local recreates the
-#     symlink on every boot. The block is rewritten on every update so fixes
-#     reach devices that already carry an older block (marker-delimited).
-#     `rm -rf` before `ln -sf`: if anything recreated a real directory at
-#     /service/dbus-evcharger, ln -sf would fail silently onto it and stale code
-#     would keep running.
+# Refresh the boot hook before an existing exit statement. On boot it creates
+# a missing canonical link, without deleting a directory or unexpected link.
 RC_LOCAL="/data/rc.local"
 if [ ! -f "$RC_LOCAL" ]; then
     printf '#!/bin/sh\n' > "$RC_LOCAL"
@@ -194,12 +192,13 @@ RC_BLOCK="$STAGING_DIR/rc.block"
 cat > "$RC_BLOCK" << 'RCEOF'
 
 # === dbus-evcharger service persistence ===
-# Recreate /service symlink on boot (lost since /service is tmpfs).
-rm -rf /service/dbus-evcharger
-ln -sf /data/dbus-evcharger/service/dbus-evcharger /service/dbus-evcharger
-sleep 2
-svc -u /service/dbus-evcharger/log 2>/dev/null || true
-svc -u /service/dbus-evcharger 2>/dev/null || true
+if [ ! -e /service/dbus-evcharger ] && [ ! -L /service/dbus-evcharger ]; then
+    ln -s /data/dbus-evcharger/service/dbus-evcharger /service/dbus-evcharger
+fi
+if [ -L /service/dbus-evcharger ] && [ "$(readlink /service/dbus-evcharger)" = /data/dbus-evcharger/service/dbus-evcharger ]; then
+    svc -u /service/dbus-evcharger/log 2>/dev/null || true
+    svc -u /service/dbus-evcharger 2>/dev/null || true
+fi
 # === end dbus-evcharger ===
 RCEOF
 # An existing rc.local may end in "exit 0"; boot hooks appended after it never run.
@@ -216,16 +215,11 @@ cat "$STAGING_DIR/rc.local" > "$RC_LOCAL"
 chmod +x "$RC_LOCAL"
 sep "refreshed rc.local boot persistence block"
 
-# 6b. Give svscan a moment to spawn fresh supervisors for the new symlinks
-#     before we try to bring the services up, so svc -u lands on a live one.
+# Existing supervisors remain attached. Only a first installation needs
+# svscan to notice the new link. PackageManager is not restarted by an update.
 sleep 3
-
-# 7. Let PackageManager rediscover the package (version changed).
-svc -t /service/PackageManager 2>/dev/null || true
-
-# 8. Bring everything back up (svc -d only marks down; svc -u starts).
-for svc in /service/dbus-evcharger/log /service/dbus-evcharger; do
-    [ -e "$svc" ] && svc -u "$svc" 2>/dev/null || true
+for service_path in "$SERVICE_LINK/log" "$SERVICE_LINK"; do
+    svc -u "$service_path"
 done
 
 sep "installed version $(cat "$INSTALL_DIR/version" 2>/dev/null || echo unknown)"

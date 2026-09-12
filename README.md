@@ -189,6 +189,14 @@ A release is staged under volatile `/tmp` before stopping the service, so
 reinstalling from the installed tree does not delete the update source.
 The updater preserves `local_config.py`; `deploy.sh` deliberately replaces it
 when the workstation has a local copy (`PUSH_LOCAL_CONFIG=1`).
+Existing service and log directory inodes, ownership, supervisor state and the
+canonical `/service` symlink are preserved. Only the application is stopped;
+run scripts are replaced atomically and a healthy logger keeps running.
+Ordinary updates do not restart PackageManager. A stuck application receives
+one supervisor-scoped kill after twenty seconds; installation aborts if it is
+still running after twenty-five seconds. Unexpected service links, real `/service`
+directories or legacy firmware copies require a separate migration before
+updating; the updater leaves them untouched.
 
 Service definitions persist under `/data/dbus-evcharger/service/dbus-evcharger`.
 `/service/dbus-evcharger` is a symlink recreated by `/data/rc.local`, including
@@ -214,9 +222,14 @@ readlink /service/dbus-evcharger
 tail -n 40 /var/log/dbus-evcharger/current
 ```
 
+`update.sh` confirms termination before copying but does not wait for a fresh
+process or heartbeat after requesting startup. The deployment caller must
+verify startup and D-Bus availability.
+
 `deploy.sh` fails if a fresh heartbeat does not appear within 60 seconds or the
 service never reaches `up`. A heartbeat proves the loop is running, not that
 Home Assistant is reachable: also inspect `/Connected` and the log. Restore a
 previous release with its `update.sh`, keeping the device-local configuration.
-The isolated installer regression test covers two consecutive in-place updates,
-configuration preservation, service symlinks, and a boot script ending in `exit 0`.
+Installer regressions cover repeated updates with live directory handles,
+supervisor-state and ownership preservation, atomic run-script replacement,
+configuration, safe rejection before stopping, and boot hooks before `exit 0`.
