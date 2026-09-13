@@ -230,14 +230,16 @@ def test_ha_nonfinite_optional_values_remain_invalid(monkeypatch, invalid):
     )
 
 
-def test_ha_template_preserves_unavailable_states():
+@pytest.mark.parametrize("state", ["unavailable", '<charging "car"> & ready'])
+def test_ha_template_preserves_state_json(state):
     jinja2 = pytest.importorskip("jinja2")
-    env = jinja2.Environment()
+    # Home Assistant renders JSON with to_json; HTML escaping corrupts that JSON.
+    env = jinja2.Environment(autoescape=jinja2.select_autoescape(default_for_string=False))
     env.filters["to_json"] = json.dumps
     output = env.from_string(
         build_template("sensor.status", "sensor.power", "sensor.current", "sensor.energy")
-    ).render(states=lambda _: "unavailable")
-    assert json.loads(output)["power"] == "unavailable"
+    ).render(states=lambda _: state)
+    assert json.loads(output)["power"] == state
 
 
 def test_ha_non_object_json_is_failed_snapshot(monkeypatch):
