@@ -14,7 +14,7 @@
 # Usage: ./deploy.sh [SSH_HOST]
 #
 
-set -e
+set -euo pipefail
 
 SSH_HOST="${1:-Cerbo}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -54,22 +54,28 @@ COPYFILE_DISABLE=1 tar \
     -czf - -C "$SCRIPT_DIR" . \
     | ssh "$SSH_HOST" "set -e; rm -rf $DEPLOY_DIR; mkdir -p $DEPLOY_DIR; \
         tar -xz -C $DEPLOY_DIR --strip-components=1; \
-        rm -f /run/dbus-evcharger/heartbeat; \
         PUSH_LOCAL_CONFIG=1 sh $DEPLOY_DIR/update.sh; \
-        waited=0; while [ \$waited -lt 15 ] && ! [ -f /run/dbus-evcharger/heartbeat ]; do sleep 1; waited=\$((waited + 1)); done; \
+        rm -f /run/dbus-evcharger/heartbeat; \
+        waited=0; while [ \$waited -lt 60 ] && ! [ -f /run/dbus-evcharger/heartbeat ]; do sleep 1; waited=\$((waited + 1)); done; \
+        test -f /run/dbus-evcharger/heartbeat; \
         rm -rf $DEPLOY_DIR"
 
 # Wait for supervise to bring the service back up (svc -u is async)
 echo ">>> Service status:"
 STATUS=""
-for i in $(seq 1 15); do
+for _attempt in $(seq 1 15); do
     sleep 1
     if STATUS="$(ssh "$SSH_HOST" "svstat /service/dbus-evcharger 2>&1")"; then
-        printf '%s\n' "$STATUS"
-        break
+        if [[ "$STATUS" == *": up (pid "* ]]; then
+            printf '%s\n' "$STATUS"
+            break
+        fi
     fi
 done
-[ "$i" == "15" ] && echo "svstat failed: $STATUS" && exit 1
+if [[ "$STATUS" != *": up (pid "* ]]; then
+    echo "Service did not start: $STATUS" >&2
+    exit 1
+fi
 
 # The service dir must be a symlink into the install tree. A real directory
 # here means stale code got resurrected (legacy /opt copy or boot-order race)

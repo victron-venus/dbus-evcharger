@@ -18,7 +18,7 @@ if [ "$scriptAction" == 'INSTALL' ]; then
         cp "$scriptDir/local_config.example.py" "$scriptDir/local_config.py"
         logMessage "seeded local_config.py from example"
     fi
-    sh "$scriptDir/update.sh" "$scriptDir"
+    sh "$scriptDir/update.sh" "$scriptDir" || exit $?
 fi
 
 if [ "$scriptAction" == 'UNINSTALL' ]; then
