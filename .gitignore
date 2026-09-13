@@ -17,3 +17,7 @@ dbus_evcharger.egg-info/
 .venv-ci/
 release-dist/
 bandit-results.json
+# Frozen release overlays and final build staging
+.release-plan.json
+.release-inputs.json
+release-assets/
