@@ -27,7 +27,7 @@ class PackageConfig(TypedDict):
 
 def validate_version(root: Path, version: str, channel: str) -> None:
     """Require a safe version compatible with the committed runtime metadata."""
-    if not re.fullmatch(r"v?[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?", version):
+    if not re.fullmatch(r"v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?", version, re.ASCII):
         message = "Expected a semantic version without path or shell characters"
         raise ValueError(message)
     if channel not in {"nightly", "beta", "rc", "stable"}:
