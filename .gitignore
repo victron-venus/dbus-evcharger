@@ -12,3 +12,8 @@ htmlcov/
 dbus_evcharger.egg-info/
 *.backup
 .pytest_cache/
+
+# Local validation and candidate packaging
+.venv-ci/
+release-dist/
+bandit-results.json
