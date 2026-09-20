@@ -1,5 +1,23 @@
 # dbus-evcharger
 
+## Retired: use dbus-ev
+
+This repository is archived. Vehicle and charger telemetry are maintained together
+in [dbus-ev](https://github.com/victron-venus/dbus-ev), using one Mercedes cloud
+session and an optional direct Cerbo meter. The standalone package receives no
+further updates; existing releases remain available for rollback.
+
+Follow the [migration and rollback guide](https://github.com/victron-venus/dbus-ev/blob/main/docs/mercedes-migration.md).
+Enable `CHARGER_ENABLED = True` in dbus-ev and remove this package's service before
+installation. Keep charger instance 40 and suffix `charger` to preserve existing
+Venus/MQTT consumers. Never run both charger owners simultaneously. The legacy
+installer refuses installation while the unified charger is enabled.
+
+The replacement [Home Assistant MQTT adapter](https://github.com/victron-venus/dbus-ev/tree/main/ha)
+consumes telemetry from Cerbo. Mercedes credentials belong only on the GX after
+migration. The older HA/MQTT implementation is preserved below for reference;
+its charger control paths are not part of the new telemetry-only service.
+
 Home-Assistant-backed EV charger bridge for Victron Venus OS.
 
 Runs **on the Cerbo GX** and exposes an EV charger as a native Venus service:
