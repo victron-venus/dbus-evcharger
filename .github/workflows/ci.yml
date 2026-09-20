@@ -17,7 +17,7 @@ jobs:
     # a step-level `uses` of a workflow_call workflow is rejected by GitHub.
     uses: victron-venus/venus-os-ci-toolkit/.github/workflows/python-ci.yml@553cc62049396c2b57d3ea21a480f7a69842d1a4
     with:
-      python-version: '3.11'
+      python-version: '3.12.13'
       # mypy has pre-existing errors (Venus OS imports without stubs); tracked separately
       run-type-check: false
       coverage-threshold: 60
@@ -53,6 +53,6 @@ jobs:
         with:
           version: '0.12.7'
       - name: Install locked development environment
-        run: uv sync --locked --extra dev --python 3.11 --no-build --no-install-project
+        run: uv sync --locked --extra dev --python 3.12.13 --no-build --no-install-project
       - name: Test locked runtime dependencies
         run: .venv/bin/python -m pytest
