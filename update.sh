@@ -15,6 +15,22 @@
 #
 set -eu
 
+# The unified package owns the same charger identity when enabled. Do not
+# resurrect this legacy worker during an unattended PackageManager reinstall.
+if [ -f /data/dbus-ev/local_config.py ]; then
+    if python3 - <<'PYTHON'
+from pathlib import Path
+values = {}
+p = Path("/data/dbus-ev/local_config.py")
+exec(compile(p.read_text(), str(p), "exec"), values)
+raise SystemExit(0 if values.get("CHARGER_ENABLED") else 1)
+PYTHON
+    then
+        echo "dbus-ev already owns the charger; disable CHARGER_ENABLED before installing this package" >&2
+        exit 1
+    fi
+fi
+
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="${1:-/data/dbus-evcharger}"
 
